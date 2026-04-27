@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iaas-control-api
+  namespace: ai-infra-prod
+  labels:
+    app: iaas-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: iaas-api
+  template:
+    metadata:
+      labels:
+        app: iaas-api
+    spec:
+      containers:
+      - name: gateway
+        image: acrtf.azurecr.io/devopstrio/iaas-control-api:v1.0.0
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: tf-secrets
+              key: db-url
+        - name: ARM_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: tf-secrets
+              key: client-id
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iaas-api-svc
+  namespace: ai-infra-prod
+spec:
+  selector:
+    app: iaas-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terraform-engine
+  namespace: ai-infra-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: terraform-engine
+  template:
+    metadata:
+      labels:
+        component: terraform-engine
+    spec:
+      containers:
+      - name: worker
+        image: acrtf.azurecr.io/devopstrio/terraform-engine:latest
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iaas-ingress
+  namespace: ai-infra-prod
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: infra.devopstrio.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: iaas-api-svc
+            port:
+              number: 80
